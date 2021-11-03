@@ -1,0 +1,221 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/12/Memory.jack
+
+/**
+ * This library provides two services: direct access to the computer's main
+ * memory (RAM), and allocation and recycling of memory blocks. The Hack RAM
+ * consists of 32,768 words, each holding a 16-bit binary number.
+ */ 
+class Memory {
+    static int freeList; // pointer to the first free segment. Heap resides at 2048 - 16383
+    static int RAM;
+
+    /** Initializes the class. */
+    function void init() {
+        let freeList = 2050; // the base address of the first empty segment
+        let freeList[-2] = (16383-freeList); // its size - the size of the whole heap less the 2 words for housekeeping
+        let freeList[-1] = null; // the next empty segment - currently none
+
+        let RAM = 0; // our pointer to the beginning of RAM, so we can address it for peek
+        return;
+    }
+
+    /** Returns the RAM value at the given address. */
+    function int peek(int address) {
+        return RAM[address];
+    }
+
+    /** Sets the RAM value at the given address to the given value. */
+    function void poke(int address, int value) {
+        let RAM[address] = value;
+        return;
+    }
+
+    /** Finds an available RAM block of the given size and returns
+     *  a reference to its base address. */
+    function int alloc(int size) {
+        var int temp_address, found_address, new_address, found_size;
+        if (size < 1) { do Sys.error(5); } // alloc on non-positive number
+        let found_address = Memory.getBestBlock(freeList, size);
+        if (found_address = 0) {
+            do Sys.error(6); // heap overflow
+        }
+        let found_size = found_address[-2];
+
+        // if there would be at least 3 space left after splitting, split it
+        if (found_size > (size + 2) )
+        {
+            // set this block's size to be size
+            let found_address[-2] = size;
+            // make a new block at the end of this one
+            let new_address = found_address + size + 2;
+            let new_address[-2] = found_size - (size + 2);
+            // find the old address in the freeList and point it to the new block instead
+            // if this was the first item in the list, replace it with our new block
+            if (freeList = found_address)
+            {
+                // point this block's next to whatever the old one was
+                let new_address[-1] = freeList[-1];
+                // and point freeList to this block
+                let freeList = new_address;
+            }
+            else {
+                // otherwise loop through the freeList until we find the item that pointed to the old address
+                let temp_address = freeList;
+                while (~(temp_address[-1] = found_address)) {
+                    let temp_address = temp_address[-1];
+                }
+                // point that item to ourselves, and point our next address at wherever this block used to point
+                let temp_address[-1] = new_address;
+                let new_address[-1] = found_address[-1];
+            }
+        }
+        // otherwise just remove this block from the list (and use its whole space allocation)
+        else {
+            // if this was the first block, just point freeList to the next free block
+            if (freeList = found_address)
+            {
+                let freeList = found_address[1];
+            }
+            else
+            {
+                // otherwise loop through the list to find the item that pointed to us
+                let temp_address = freeList;
+                while (~(temp_address[-1] = found_address)) {
+                        let temp_address = temp_address[-1];
+                }
+                // and point that block's next to our next
+                let temp_address[-1] = found_address[-1];
+            }
+        }
+        // point our next to null so we don't corrupt the list later
+        let found_address[-1] = null;
+        return found_address;
+    }
+
+    /** find the next RAM block that has enough size, starting at segment
+     *  returns the blocks base address, or 0 if none found
+     */
+    function int getFirstBlock(int segment, int size)
+    {
+        var int nextSegment;
+        if (segment[-2] > size) {
+            return segment;
+        }
+        let nextSegment = segment[-1];
+        if (nextSegment) {
+            return Memory.getFirstBlock(nextSegment, size);
+        }
+        return 0;
+    }
+
+    /** find the smallest RAM block that has enough size */
+    function int getBestBlock(int segment, int size)
+    {
+        var int smallest_size, smallest_ptr, ptr, this_size;
+        let smallest_size = 26383;
+        let ptr = freeList;
+        let smallest_ptr = ptr;
+        // loop through all the available blocks and note the smallest that is large enough
+        while (ptr > 0)
+        {
+            let this_size = ptr[-2];
+            if ((~(this_size < size)) & (this_size < smallest_size))
+            {
+                let smallest_size = this_size;
+                let smallest_ptr = ptr;
+            }
+            let ptr = ptr[-1];
+        }
+        // if it was small enough, return it
+        if (~(smallest_ptr[-2] < size)) { return smallest_ptr; }
+        // else return 0
+        return 0;
+    }
+
+    /** de-frag the memory by combining blocks physically contiguous, but logically separate from the first block
+     *  if this is called whenever we deAlloc, for any two adjacent blocks one of them must be newly deAlloc'd one
+     *  so we don't have to check every block-pair for adjacencies
+     */
+    function void deFrag()
+    {
+        var int this_block_end, other_block_size;
+        var int other_block, temp_block;
+        var boolean took_action;
+
+        let took_action = true;
+        // repeat the loop for as long as we're joining things in case there are multiple joins
+        while (took_action)
+        {
+            let took_action = false;
+            // loop through the rest of the freeList
+            let this_block_end = freeList + freeList[-2] + 2;
+            let other_block = freeList[-1];
+            while (other_block > 0)
+            {
+                // if that block comes immediately after us in memory
+                if (other_block = this_block_end)
+                {
+                    // delete that next block and add its size (plus overhead) to our own
+                    let freeList[-2] = freeList[-2] + other_block[-2] + 2;
+                    // find whoever previously pointed to the removed block and point them onto its next block
+                    // this can't be 0 because other_block is guaranteed to be further down the list than the 0th element
+                    let temp_block = Memory.getPointsTo(other_block);
+                    let temp_block[-1] = other_block[-1];
+
+                    // restart the loop by breaking out of it and setting the "go again" flag
+                    let took_action = true;
+                    let other_block = 0;
+                }
+                else
+                {
+                    let other_block_size = other_block[-2];
+                    // if that block comes immediately before us
+                    if ((other_block + other_block_size + 2) = freeList)
+                    {
+                        // append our free space to the end of the other block's
+                        let other_block[-2] = other_block_size + freeList[-2] + 2;
+                        // and set the new block as the start of the freeList
+                        let freeList = other_block;
+
+                        // restart the loop by breaking out of it and setting the "go again" flag
+                        let took_action = true;
+                        let other_block = 0;
+                    }
+                }
+            // go onto the next block;
+            if (other_block > 0) { let other_block = other_block[-1]; }
+            }
+        }
+        return;
+    }
+
+    /** get the freeList entry before the given one in the list (the one whose next is this block)
+    *   return 0 if this block is the first
+    */
+    function int getPointsTo(int address)
+    {
+        var int ptr;
+        if (freeList = address) {return 0;}
+        let ptr = freeList;
+        // loop through until we find the block that points to this one
+        while (~(ptr[-1] = address))
+        {
+            let ptr = ptr[-1];
+        }
+        return ptr;
+    }
+
+
+    /** De-allocates the given object (cast as an array) by making
+     *  it available for future allocations. */
+    function void deAlloc(Array o) {
+        // insert this block at the head of the list
+        let o[-1] = freeList;
+        let freeList = o;
+        do Memory.deFrag();
+        return;
+    }    
+}

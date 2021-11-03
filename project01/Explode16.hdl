@@ -1,0 +1,33 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/01/Mux4Way16.hdl
+
+/**
+ * 16-way duplicator
+ * out = in*16
+ */
+
+CHIP Explode16 {
+    IN in;
+    OUT out[16];
+
+    PARTS:
+	Not(in=in, out=notin);
+	Not(in=notin, out=out[0]);
+	Not(in=notin, out=out[1]);
+	Not(in=notin, out=out[2]);
+	Not(in=notin, out=out[3]);
+	Not(in=notin, out=out[4]);
+	Not(in=notin, out=out[5]);
+	Not(in=notin, out=out[6]);
+	Not(in=notin, out=out[7]);
+	Not(in=notin, out=out[8]);
+	Not(in=notin, out=out[9]);
+	Not(in=notin, out=out[10]);
+	Not(in=notin, out=out[11]);
+	Not(in=notin, out=out[12]);
+	Not(in=notin, out=out[13]);
+	Not(in=notin, out=out[14]);
+	Not(in=notin, out=out[15]);
+}

@@ -1,0 +1,248 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/12/Screen.jack
+
+/**
+ * A library of functions for displaying graphics on the screen.
+ * The Hack physical screen consists of 256 rows (indexed 0..255, top to bottom)
+ * of 512 pixels each (indexed 0..511, left to right). The top left pixel on 
+ * the screen is indexed (0,0).
+ */
+class Screen {
+    // the paint brush color
+    static boolean color;
+    // powers of two, for masking to draw pixels
+    static Array powers_of_2, not_powers_of_2;
+
+    /** Initializes the Screen. */
+    function void init() {
+        var int power, value;
+        let powers_of_2 = Array.new(16);
+        let not_powers_of_2 = Array.new(16);
+        let value = 1;
+        let power = 0;
+        while (power < 16)
+        {
+            let powers_of_2[power] = value;
+            let not_powers_of_2[power] = ~value;
+            let value = value + value;
+            let power = power + 1;
+        }
+        let color = true;
+        return;
+    }
+
+    /** Erases the entire screen. */
+    function void clearScreen() {
+        var int address;
+        let address = 16384;
+        while ( address < 24576 )
+        {
+            do Memory.poke(address, 0);
+            let address = address + 1;
+        }
+        return;
+    }
+
+    /** Sets the current color, to be used for all subsequent drawXXX commands.
+     *  Black is represented by true, white by false. */
+    function void setColor(boolean b) {
+        let color = b;
+        return;
+    }
+
+    /** Draws the (x,y) pixel, using the current color. */
+    function void drawPixel(int x, int y) {
+        var int address, bit, word;
+        if ( (x < 0 ) | (x > 511) | (y < 0) | (y > 255) )
+        {
+            do Sys.error(7); // 7	Screen.drawPixel	Illegal pixel coordinates   
+        }
+        let word = x / 16;
+        let address = 16384 + (y * 32) + word;
+        let bit = x - (16 * word);
+        if (color){
+            do Memory.poke(address, Memory.peek(address) | powers_of_2[bit]);
+        }
+        else
+        {
+            do Memory.poke(address, Memory.peek(address) & not_powers_of_2[bit]);
+        }
+        return;
+    }
+
+    /** Draws a line from pixel (x1,y1) to pixel (x2,y2), using the current color. */
+    function void drawLine(int x1, int y1, int x2, int y2) {
+        var int i, remainder, address, dx, dy, adyMinusbdx, a, b;
+        if ( (x1 < 0) | (x1 > 511) | (x2 < 0) | (x2 > 511) | (y1 < 0) | (y1 > 255) | (y2 < 0) | (y2 > 255))
+        {
+            do Sys.error(8); // error 8	Screen.drawLine	Illegal line coordinates
+        }
+
+        // the special case of the vertical line:
+        if (x1 = x2)
+        {
+            // set y1 to be the smaller
+            // and increment y2 so we can compare to it without an extra add operation each time
+            if (y1 > y2) {
+                let i = y1;
+                let y1 = y2;
+                let y2 = i + 1;
+            }
+            else { let y2 = y2 + 1; }
+            while (y1 < y2)
+            {
+                do Screen.drawPixel(x1, y1);
+                let y1 = y1 + 1;
+            }
+            return;
+        }
+        // the more involved (but pleasantly fast) special case of the horizontal line
+        if (y1 = y2)
+        {
+            // set x1 to be the smaller
+            // and increment x2 so we can compare to it without an extra add operation each time
+            if (x1 > x2) {
+                let i = x1;
+                let x1 = x2;
+                let x2 = i + 1;
+            }
+            else { let x2 = x2 + 1; }
+            // first go from x1 to the end of the word it's in
+            let remainder = Screen.mod(x1, 16);
+            if (remainder > 0)
+            {
+                while (remainder < 16)
+                {
+                    do Screen.drawPixel(x1, y1);
+                    let remainder = remainder + 1;
+                    let x1 = x1 + 1;
+                    // if we've got to the end of the line already quit out
+                    if (x1 = x2) { return; }
+                }
+            }
+            let address = 16384 + (y1 * 32) + (x1 / 16);
+            // now write the line one word at a time
+            while ((x1 + 15) < x2)
+            {
+                do Memory.poke(address, color);
+                let x1 = x1 + 16;
+                let address = address + 1;
+            }
+            // and now finish off the line
+            while (x1 < x2)
+            {
+                do Screen.drawPixel(x1, y1);
+                let x1 = x1 + 1;
+            }
+            return;
+        }
+
+        // and the more general case of the non-orthogonal line
+
+        // sanitize backwards lines so x1 is left-most and y1 is top-most
+
+        if ((x1 > x2) & (y1 > y2))
+         {
+            let i = x1;
+            let x1 = x2;
+            let x2 = i;
+            let i = y1;
+            let y1 = y2;
+            let y2 = i;
+        }
+
+
+        // initialise variables
+        let dx = x2-x1;
+        let dy = y2-y1;
+        let a=0;
+        let b=0;
+        let adyMinusbdx = 0;
+
+        if ((dx > 0) & (dy > 0))
+        {
+            // draw the line pixel by pixel
+            while (~ ((a > dx) | (b > dy)))
+            {
+                do Screen.drawPixel(x1 + a, y1 + b);
+                if (adyMinusbdx < 0) { let a = a + 1; let adyMinusbdx = adyMinusbdx + dy; }
+                else { let b = b + 1; let adyMinusbdx = adyMinusbdx - dx; }
+            }
+        }
+        else
+        {
+            if (x1 > x2)
+             {
+                let x1 = x2;
+                let y1 = y2;
+                let dx = -dx;
+                let dy = -dy;
+            }
+            // draw the line pixel by pixel
+            while (~ ((a > dx) | (b < dy)))
+            {
+                do Screen.drawPixel(x1 + a, y1 + b);
+                if (adyMinusbdx < 0) { let b = b - 1; let adyMinusbdx = adyMinusbdx + dx; }
+                else { let a = a + 1; let adyMinusbdx = adyMinusbdx + dy; }
+            }
+        }
+        return;
+    }
+
+    /** the remainder of x / y */
+    function int mod(int x, int y)
+    {
+        var int quotient;
+        let quotient = x / y;
+        return x - (y * quotient);
+    }
+
+    /** Draws a filled rectangle whose top left corner is (x1, y1)
+     * and bottom right corner is (x2,y2), using the current color. */
+    function void drawRectangle(int x1, int y1, int x2, int y2) {
+        var int temp;
+        if ( (x1 < 0) | (x1 > 511) | (x2 < 0) | (x2 > 511) | (y1 < 0) | (y1 > 255) | (y2 < 0) | (y2 > 255))
+        {
+            do Sys.error(9); //  error 9	Screen.drawRectangle	Illegal rectangle coordinates
+        }
+        if (y1 > y2)
+        {
+            let temp = y1;
+            let y1 = y2;
+            let y2 = temp + 1;
+        }
+        else { let y2 = y2 + 1; }
+        while (y1 < y2)
+        {
+            // draw horizontal lines so we can write whole words at a time
+            do Screen.drawLine(x1, y1, x2, y1);
+            let y1 = y1 + 1;
+        }
+        return;
+    }
+
+    /** Draws a filled circle of radius r<=181 around (x,y), using the current color. */
+    function void drawCircle(int x, int y, int r) {
+        var int r_squared, dy, r_plus_one, root_r_squared_less_dy_squared;
+        if ( (x < 0 ) | (x > 511) | (y < 0) | (y > 255) )
+        {
+            do Sys.error(12); // error 12	Screen.drawCircle	Illegal center coordinates
+        }
+        if ( (r < 0) | (r > 181))
+        {
+            do Sys.error(13); // error 13	Screen.drawCircle	Illegal radius 
+        }
+        let r_squared = r * r;
+        let dy = -r;
+        let r_plus_one = r + 1;
+
+        while (dy < r_plus_one) {
+            let root_r_squared_less_dy_squared = Math.sqrt(r_squared - (dy * dy));
+            do Screen.drawLine(x-root_r_squared_less_dy_squared, y + dy, x+root_r_squared_less_dy_squared, y + dy);
+            let dy = dy + 1;
+        }
+        return;
+    }
+}

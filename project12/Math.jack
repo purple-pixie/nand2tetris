@@ -1,0 +1,136 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/12/Math.jack
+
+/**
+ * A library of commonly used mathematical functions.
+ * Note: Jack compilers implement multiplication and division using OS method calls.
+ */
+class Math {
+    static Array two_powers; // powers of two for bit-selection
+    static int two_q_y; // the division function's 2 * q * y value, so we don't have to multiply anything
+    static int minus_one; // save ourselves a neg operation in sqrt()
+
+    /** Initializes the library. */
+    function void init() {
+        var int power, value;
+        let minus_one = -1;
+        let two_powers = Array.new(16);
+        let value = 1;
+        let power = 0;
+        while (power < 16)
+        {
+            let two_powers[power] = value;
+            let value = value + value;
+            let power = power + 1;
+        }
+        return;
+    }
+
+    /** Returns the absolute value of x. */
+    function int abs(int x) {
+        if (x < 0) {return -x;}
+        return x;
+    }
+
+    /** return the i-th bit of x. */
+    function int getBit(int x, int bit)
+    {
+        return x & two_powers[bit];
+    }
+
+    /** Returns the product of x and y. 
+     *  When a Jack compiler detects the multiplication operator '*' in the 
+     *  program's code, it handles it by invoking this method. In other words,
+     *  the Jack expressions x*y and multiply(x,y) return the same value.
+     */
+    function int multiply(int x, int y) {
+        var int sum, shiftedX, i;
+        let sum = 0;
+        let shiftedX = x;
+        let i = 0;
+        while (i < 16){
+            if (Math.getBit(y, i)) {
+                let sum = sum + shiftedX;
+            }
+            let shiftedX = shiftedX + shiftedX;
+            let i = i + 1;
+        }
+        return sum;
+    }
+
+    /** Returns the integer part of x/y.
+     *  When a Jack compiler detects the multiplication operator '/' in the 
+     *  program's code, it handles it by invoking this method. In other words,
+     *  the Jack expressions x/y and divide(x,y) return the same value.
+     *
+     * This function is just a wrapper for divideRecursive that calls the initial division with positive operands
+     * and then negates the output if there was an odd number of negative operands
+     * (this could all be done in one function but it would add sanity-checking overhead to every iteration of the
+     *  recursion loop)
+     */
+    function int divide(int x, int y) {
+        if (y = 0) { do Sys.error(3); } // div0 error
+        if (x < 0) {
+            if (y < 0) {
+                return Math.divideRecursive(-x, -y);
+            }
+            return -Math.divideRecursive(-x, y);
+        }
+        if (y < 0) {
+            return -Math.divideRecursive(x, -y);
+        }
+        return Math.divideRecursive(x, y);
+    }
+
+    /** Do the actual division, with guaranteed-positive operands */
+    function int divideRecursive(int x, int y)
+    {
+        var int q, two_y;
+        let two_q_y = 0;
+        if (y > x )
+        {
+            return 0;
+        }
+        let two_y = y + y;
+        /* if y would become negative, stop */
+        if ((y > 0) & (two_y < 0)) { let q = 0; }
+        else { let q = Math.divide(x, two_y); }
+        if ((x - two_q_y) < y) {
+            return q + q;
+        }
+        let two_q_y = two_q_y + y;
+        return q + q + 1;
+    }
+
+    /** Returns the integer part of the square root of x. */
+    function int sqrt(int x) {
+     /* ((y + 2^j)^2 ≤ x) and ((y + 2^j)^2 > 0) then y = y + 2^j */
+        var int y, j, y_plus_2_to_the_j, y_plus_2_to_the_j_squared;
+        if (x < 0) { do Sys.error(4); } // sqrt of a negative error
+        let y = 0;
+        let j = 7;
+        while (j > minus_one) {
+            let y_plus_2_to_the_j = (y + two_powers[j]);
+            let y_plus_2_to_the_j_squared = y_plus_2_to_the_j * y_plus_2_to_the_j;
+            if ( (~(y_plus_2_to_the_j_squared > x)) & (y_plus_2_to_the_j_squared > 0)) {
+                let y = y_plus_2_to_the_j;
+            }
+            let j = j - 1;
+        }
+        return y;
+    }
+
+    /** Returns the greater number. */
+    function int max(int a, int b) {
+        if (a < b) { return b; }
+        return a;
+    }
+
+    /** Returns the smaller number. */
+    function int min(int a, int b) {
+        if (a < b) { return a; }
+        return b;
+    }
+}
